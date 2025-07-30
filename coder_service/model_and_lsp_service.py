@@ -12,6 +12,7 @@ class ModelAndLSPService:
     def __init__(self):
         self.clangd = ClangdClient()
 
+    '''-----------------------------------------------helper functions--------------------------------------------------'''
     def extract_cpp_code(self,text: str) -> str | None:
         CPP_RE = re.compile(r"```(?:cpp|c\+\+)\s*(.*?)```", re.IGNORECASE | re.DOTALL)
         GEN_RE = re.compile(r"```\s*(.*?)```", re.IGNORECASE | re.DOTALL)   
@@ -33,17 +34,7 @@ class ModelAndLSPService:
         code = bytes(raw, "utf-8").decode("unicode_escape")
         # dedent in case everything is indented once
         return textwrap.dedent(code).lstrip()
-
-    def get_query_response(self, query: str) -> str:
-        return generate(query)
-    
-    def get_code(self, query: str):  
-        response = generate(query)
-        code = self.extract_cpp_code(response)
-        cpp_path = pathlib.Path("generated_code/extractedCode.cpp").resolve()
-        cpp_path.write_text(code, encoding="utf-8")
-        return response
-    
+   
     # To extract function names from C++ code, we can use a regex pattern that matches typical function definitions.
     # This pattern will look for lines that start with a return type, followed by a function name and its parameters.
     FUNC_PATTERN = re.compile(
@@ -64,15 +55,16 @@ class ModelAndLSPService:
                 positions[m.group(1)] = (ln, m.start())   # 0-based for clangd
         return positions
 
-    def get_hover(self,uri,positions):
-        results = {}
-        for name, (ln, col) in positions.items():
-            hover = self.clangd.get_hover(uri, ln, col)
-            if hover:
-                results[name] = hover.get("contents", {})
-        return results
-    
     def get_fuction_signatures(self,cpp_path: pathlib.Path, uri:str):
+        """
+        Get function signatures from the code using clangd.
+        args:
+            cpp_path (pathlib.Path): Path to the C++ file.
+            uri (str): URI of the C++ file.
+        returns:
+            dict: A dictionary where keys are function names and values are their signatures.
+        """
+
         # Get all the functions in the code
         functions = self.extract_functions(cpp_path)
 
@@ -86,6 +78,17 @@ class ModelAndLSPService:
             if hover:
                 results[name] = hover.get("contents", {}).get("value", "")
         return results
+
+    '''-----------------------------------------------Service Methods--------------------------------------------------'''
+    def get_query_response(self, query: str) -> str:
+        return generate(query)
+    
+    def get_code(self, query: str):  
+        response = generate(query)
+        code = self.extract_cpp_code(response)
+        cpp_path = pathlib.Path("generated_code/extractedCode.cpp").resolve()
+        cpp_path.write_text(code, encoding="utf-8")
+        return response
         
     def analyze_code(self,filename:str) -> List[str]:
         cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
