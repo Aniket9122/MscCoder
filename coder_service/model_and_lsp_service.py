@@ -78,6 +78,88 @@ class ModelAndLSPService:
             if hover:
                 results[name] = hover.get("contents", {}).get("value", "")
         return results
+    
+    # To extract variables from the code
+    VAR_PATTERN = re.compile(
+        r"""
+        ^\s*                                   # ← allow leading spaces
+        (?P<type>[\w:\*&<>\[\]\s]+?)\s+        # type  (e.g. "int", "Node *")
+        (?P<vars>                              # whole declarator list
+            (?:[A-Za-z_]\w*                    #   first identifier
+                (?:\s*\[[^\]]*\])?             #   optional [] (arrays)
+                (?:\s*=\s*[^,;]+)?             #   optional initialiser
+                \s*                            #   whitespace
+                (?:,|;)                        #   , or ; terminator
+            )+                                 #   …repeat
+        )
+        """,
+        re.VERBOSE | re.MULTILINE)
+
+    def extract_variables(self,cpp_path: pathlib.Path) -> list[str]:
+        """Return *all* variable/field names declared in the translation unit."""
+        code = cpp_path.read_text(encoding="utf-8", errors="ignore")
+        names: set[str] = set()
+
+        for m in self.VAR_PATTERN.finditer(code):
+            # Skip lines that contain '(' => likely function prototypes/macros.
+            if '(' in m.group(0):
+                continue
+            # Split declarator list on ',' or ';', strip whitespace/initialisers.
+            declarators = re.split(r'[;,]', m.group('vars'))
+            for decl in declarators:
+                ident = re.match(r'\s*([A-Za-z_]\w*)', decl)
+                if ident:
+                    names.add(ident.group(1))
+        return sorted(names)
+
+
+    def find_variable_positions(
+        self,
+        cpp_path: pathlib.Path,
+        names: list[str]
+    ) -> dict[str, tuple[int, int]]:
+        """
+        Locate the first occurrence of each variable name in `names`.
+        Returns {'varName': (line, column), …}   (0-based, suitable for LSP)
+        """
+        positions: dict[str, tuple[int, int]] = {}
+        if not names:
+            return positions
+
+        name_re = re.compile(r'\b(' + '|'.join(map(re.escape, names)) + r')\b')
+
+        for ln, text in enumerate(cpp_path.read_text(encoding="utf-8",
+                                                    errors="ignore").splitlines()):
+            for m in name_re.finditer(text):
+                ident = m.group(1)
+                # keep the *first* sighting only
+                positions.setdefault(ident, (ln, m.start()))
+            if len(positions) == len(names):     # all found → stop early
+                break
+        return positions
+
+    def get_variable_info(self,cpp_path: pathlib.Path, uri: str) -> dict[str, str]:
+        """
+        Get variable information from the code using clangd.
+        args:
+            cpp_path (pathlib.Path): Path to the C++ file.
+            uri (str): URI of the C++ file.
+        returns:
+            dict: A dictionary where keys are variable names and values are their types.
+        """
+        # Get all the variables in the code
+        variables = self.extract_variables(cpp_path)
+
+        # Get the positions of the variables in the code
+        positions = self.find_variable_positions(cpp_path, variables)
+
+        # Get hover information for each variable
+        results = {}
+        for name, (ln, col) in positions.items():
+            hover = self.clangd.get_hover(uri, ln, col)
+            if hover:
+                results[name] = hover.get("contents", {}).get("value", "")
+        return results
 
     '''-----------------------------------------------Service Methods--------------------------------------------------'''
     def get_query_response(self, query: str) -> str:
@@ -102,10 +184,13 @@ class ModelAndLSPService:
         '''2. Get function signartures from clangd'''
         function_signatures = self.get_fuction_signatures(cpp_path, uri)
         
+        '''3. Get variables from clangd'''
+        variables = self.get_variable_info(cpp_path, uri)
 
         analysis = {
             "diagnostics": diagnostics,
             "function_signatures": function_signatures,
+            "variables": variables
         }
 
         analysis_path = pathlib.Path(f"generated_code/{filename}_analysis.json").resolve()
@@ -136,3 +221,19 @@ class ModelAndLSPService:
                     enhanced_path.write_text(enhanced_code, encoding="utf-8")
                 code_analysis = self.analyze_code(filename_enhanced)
         return enhanced_response
+    
+    def coder(self, filename: str):
+        """
+        Read queries/<filename>.txt and feed its content
+        into generate_and_analyze(query, filename).
+        """
+        name = filename.strip()
+        if not name.lower().endswith(".txt"):
+            name += ".txt"
+
+        queries_dir = pathlib.Path(__file__).resolve().parent.parent / "queries"
+        txt_path = queries_dir / name
+
+        query_text = txt_path.read_text(encoding="utf-8", errors="ignore")
+        query_text = "Generate C++ code for the following query: " + query_text
+        return self.generate_and_analyze(query_text, filename)
