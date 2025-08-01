@@ -25,6 +25,10 @@ def get_code(prompt: Prompt):
 def generate_and_analyze(prompt: Prompt):
     return modelAndLSPService.generate_and_analyze(prompt.query,prompt.filename)
 
+@app.post("/coder")
+def coder(prompt: Prompt):
+    return modelAndLSPService.coder(prompt.filename)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("coder:app", host="0.0.0.0", port=8000, reload=True)

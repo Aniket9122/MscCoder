@@ -56,6 +56,8 @@ class ClangdClient:
                                      stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE,
                                      text=True)
+        # Initialize an ID counter to generate unique request IDs.
+        self._id_counter = 1  
         # Create a reader and writer for the server's stdin and stdout.
         self.reader = LspReader(self.proc.stdout)
         self.writer = LspWriter(self.proc.stdin)
@@ -66,6 +68,13 @@ class ClangdClient:
         # This thread will run the _listen method which will continuously read messages from the server.
         threading.Thread(target=self._listen, daemon=True).start()
         self.initialize()
+        
+    
+    def _next_id(self) -> int:
+        """Return a fresh integer request-id."""
+        cur = self._id_counter
+        self._id_counter += 1
+        return cur
     
     # It will keep on listening for messages from the server and put them in the response queue.
     def _listen(self):
@@ -213,3 +222,13 @@ class ClangdClient:
         }
         return self.send_request("textDocument/signatureHelp", params)
 
+    def document_symbols(self, uri: str):
+        """Return the DocumentSymbol / SymbolInformation tree for this file."""
+        params = {"textDocument": {"uri": uri}}
+        return self.send_request("textDocument/documentSymbol", params)
+    
+    def semantic_tokens(self, uri: str):
+        params = {
+            "textDocument": {"uri": uri}
+        }
+        return self.send_request("textDocument/semanticTokens/full", params)
