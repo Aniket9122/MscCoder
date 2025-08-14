@@ -2,10 +2,10 @@ from clients.model_client import generate
 from clients.lsp_client import ClangdClient
 import pathlib
 from urllib.parse import urlparse, unquote
-import os
 import re
-from typing import List,Iterator, Tuple,Optional
+from typing import List
 import textwrap
+import copy
 
 
 class ModelAndLSPService:
@@ -13,6 +13,19 @@ class ModelAndLSPService:
         self.clangd = ClangdClient()
 
     '''-----------------------------------------------helper functions--------------------------------------------------'''
+    def query_extractor(self, filename: str) -> str:
+        name = filename.strip()
+        if not name.lower().endswith(".txt"):
+            name += ".txt"
+
+        queries_dir = pathlib.Path(__file__).resolve().parent.parent / "queries"
+        txt_path = queries_dir / name
+
+        query_text = txt_path.read_text(encoding="utf-8", errors="ignore")
+        query_text = "Generate C++ code for the following query: \n" + query_text + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
+
+        return query_text
+
     def extract_cpp_code(self,text: str) -> str | None:
         CPP_RE = re.compile(r"```(?:cpp|c\+\+)\s*(.*?)```", re.IGNORECASE | re.DOTALL)
         GEN_RE = re.compile(r"```\s*(.*?)```", re.IGNORECASE | re.DOTALL)   
@@ -55,7 +68,7 @@ class ModelAndLSPService:
                 positions[m.group(1)] = (ln, m.start())   # 0-based for clangd
         return positions
 
-    def get_fuction_signatures(self,cpp_path: pathlib.Path, uri:str):
+    def get_fuction_signatures(self, clangd : ClangdClient, cpp_path: pathlib.Path, uri:str):
         """
         Get function signatures from the code using clangd.
         args:
@@ -74,7 +87,7 @@ class ModelAndLSPService:
         # Get hover information for each function
         results = {}
         for name, (ln, col) in positions.items():
-            hover = self.clangd.get_hover(uri, ln, col)
+            hover = clangd.get_hover(uri, ln, col)
             if hover:
                 results[name] = hover.get("contents", {}).get("value", "")
         return results
@@ -138,7 +151,7 @@ class ModelAndLSPService:
                 break
         return positions
 
-    def get_variable_info(self,cpp_path: pathlib.Path, uri: str) -> dict[str, str]:
+    def get_variable_info(self, clangd : ClangdClient,cpp_path: pathlib.Path, uri: str) -> dict[str, str]:
         """
         Get variable information from the code using clangd.
         args:
@@ -156,36 +169,66 @@ class ModelAndLSPService:
         # Get hover information for each variable
         results = {}
         for name, (ln, col) in positions.items():
-            hover = self.clangd.get_hover(uri, ln, col)
+            hover = clangd.get_hover(uri, ln, col)
             if hover:
                 results[name] = hover.get("contents", {}).get("value", "")
         return results
 
+    def generate_logs(self, filename: str, code: str, analysis: str, iteration: int = -1):
+        # Prepare paths
+        log_dir = pathlib.Path("generated_code")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = (log_dir / f"{filename}_log.txt").resolve()
+
+        # Prepare iteration label
+        iter_label = iteration if iteration >= 0 else "initial"
+
+        # Build the entry
+        entry = (
+            "----------------------\n"
+            f"--- iteration number {iter_label} ---\n"  
+            "--- Code generated ---\n"
+            f"{code}\n\n"
+            "--- code analysis ---\n"
+            f"{analysis}\n\n\n"
+        )
+
+        # Append to log file (create if missing)
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception as e:
+            raise RuntimeError(f"Failed to write log to {log_path}: {e}") from e
+
+
     '''-----------------------------------------------Service Methods--------------------------------------------------'''
-    def get_query_response(self, query: str) -> str:
+    def get_query_response(self, filename: str) -> str:
+        query = self.query_extractor(filename)
+        print(f"Query extracted from {filename}: {query}")
         return generate(query)
     
-    def get_code(self, query: str):  
-        response = generate(query)
+    def get_code(self, filename: str):  
+        response = generate(self.query_extractor(filename))
         code = self.extract_cpp_code(response)
-        cpp_path = pathlib.Path("generated_code/extractedCode.cpp").resolve()
-        cpp_path.write_text(code, encoding="utf-8")
-        return response
+        # cpp_path = pathlib.Path("generated_code/extractedCode.cpp").resolve()
+        # cpp_path.write_text(code, encoding="utf-8")
+        return code
         
     def analyze_code(self,filename:str) -> List[str]:
+        clangd = ClangdClient()
         cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
         code = cpp_path.read_text(encoding="utf-8")
         uri = cpp_path.as_uri()
   
         '''1. Get diagnostics from clangd'''
-        self.clangd.open_file(uri, code)
-        diagnostics = self.clangd.get_diagnostics(uri)
+        clangd.open_file(uri, code)
+        diagnostics = clangd.get_diagnostics(uri)
         
         '''2. Get function signartures from clangd'''
-        function_signatures = self.get_fuction_signatures(cpp_path, uri)
+        function_signatures = self.get_fuction_signatures(clangd,cpp_path, uri)
         
         '''3. Get variables from clangd'''
-        variables = self.get_variable_info(cpp_path, uri)
+        variables = self.get_variable_info(clangd,cpp_path, uri)
 
         analysis = {
             "diagnostics": diagnostics,
@@ -193,8 +236,6 @@ class ModelAndLSPService:
             "variables": variables
         }
 
-        analysis_path = pathlib.Path(f"generated_code/{filename}_analysis.json").resolve()
-        analysis_path.write_text(str(analysis), encoding="utf-8")
         return analysis
 
     def generate_and_analyze(self, query: str, filename:str):
@@ -203,37 +244,47 @@ class ModelAndLSPService:
         cpp_path.write_text(code, encoding="utf-8")
         print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
         
+        iteration = 0
         code_analysis = self.analyze_code(filename)
-        original_analysis = code_analysis
+        self.generate_logs(filename, code, code_analysis, iteration)
+        original_analysis = copy.deepcopy(code_analysis)
+        original_code = code + "" # Store the original code for reference
+        enhanced_code = code + "" # Deep copy of the original code
         filename_enhanced = f"{filename}_enhanced"
-        enhanced_response = "No changes made to the code."
-        for i in range(3):
-            if code_analysis["diagnostics"] == []:
+        while True:
+            iteration += 1
+            print("******\n******\n******\n Iteration number: ", iteration, "\n******\n******\n******")
+            # new_query = f"This is the original query given to the llm {query}, This is the origina llm generated code : {original_code} along with the original feedback provided by clangd : {original_analysis}.\n Here is the code generated by llm in last iteration: {enhanced_code}, along with the latest feedback provided by clangd : {code_analysis}. \n Please improve upon the orginal code with the help of feedback and code generated by the clangd in both original and latest iteration. also provide entire code in the format ```cpp <code>``` where entire code is present in <code>."
+            new_query = f"""This is the original query given to the LLM: {query}
+                        This is the original LLM-generated code: {original_code}
+                        This is the original feedback provided by clangd: {original_analysis}
+
+                        Here is the code generated by the LLM in the last iteration: {enhanced_code}
+                        Here is the latest feedback provided by clangd: {code_analysis}
+
+                        Please improve upon the original code using the feedback from clangd in both the original and latest iterations. Also provide the entire improved code in the format:
+
+                        ```cpp
+                        <code>
+                        ```"""
+            enhanced_response = generate(new_query)
+            enhanced_code = self.extract_cpp_code(enhanced_response)
+            enhanced_path = pathlib.Path(f"generated_code/{filename_enhanced}.cpp").resolve()
+            # Remove existing file if present
+            if enhanced_path.exists():
+                enhanced_path.unlink()
+            # Write new content
+            enhanced_path.write_text(enhanced_code, encoding="utf-8")
+            code_analysis = self.analyze_code(filename_enhanced)
+            self.generate_logs(filename, enhanced_code, code_analysis, iteration)
+            if (code_analysis["diagnostics"] == []) or (iteration >= 5):
                 print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
                 break
-            else:
-                new_query = f"This is the original query given to the llm {query}, This is the llm generated code : {code} along with the original output : {original_analysis} and last iteration output : {code_analysis} generated by the clangd language server. please change the generated code acording to the output of the clangd language server. also provide entire code in the format ```cpp <code>``` where entire code is present in <code>."
-                print(new_query)
-                enhanced_response = generate(new_query)
-                enhanced_code = self.extract_cpp_code(enhanced_response)
-                if enhanced_code:
-                    enhanced_path = pathlib.Path(f"generated_code/{filename_enhanced}.cpp").resolve()
-                    enhanced_path.write_text(enhanced_code, encoding="utf-8")
-                code_analysis = self.analyze_code(filename_enhanced)
-        return enhanced_response
+        return iteration;   
     
     def coder(self, filename: str):
         """
         Read queries/<filename>.txt and feed its content
         into generate_and_analyze(query, filename).
         """
-        name = filename.strip()
-        if not name.lower().endswith(".txt"):
-            name += ".txt"
-
-        queries_dir = pathlib.Path(__file__).resolve().parent.parent / "queries"
-        txt_path = queries_dir / name
-
-        query_text = txt_path.read_text(encoding="utf-8", errors="ignore")
-        query_text = "Generate C++ code for the following query: " + query_text
-        return self.generate_and_analyze(query_text, filename)
+        return self.generate_and_analyze(self.query_extractor(filename), filename)
