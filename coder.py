@@ -8,25 +8,18 @@ class Prompt(BaseModel):
 
 modelAndLSPService = ModelAndLSPService()
 
-# @app.post("/get_query_response")
-# def get_code(prompt: Prompt):
-#     return modelAndLSPService.get_query_response(prompt.filename)
+@app.post("/get_code")
+def get_code(prompt: Prompt):
+    return modelAndLSPService.get_code(prompt.filename)
 
-# @app.post("/get_code")
-# def get_code(prompt: Prompt):
-#     return modelAndLSPService.get_code(prompt.filename)
-
-# @app.post("/analyze_code")
-# def get_code(prompt: Prompt):
-#     return modelAndLSPService.analyze_code(prompt.filename)
-
-# @app.post("/coder")
-# def coder(prompt: Prompt):
-#     return modelAndLSPService.coder(prompt.filename)
+@app.post("/generate")
+def generate():
+    return modelAndLSPService.generate()
 
 @app.post("/benchmark")
 def benchmark():
     return modelAndLSPService.benchmark()
+
 
 if __name__ == "__main__":
     import uvicorn
