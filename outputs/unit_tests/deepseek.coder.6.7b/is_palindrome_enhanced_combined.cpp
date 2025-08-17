@@ -1,11 +1,18 @@
-#include <iostream>
-#include <algorithm> 
-#include<string>
-using namespace std;
+#include <string>
 
-bool is_palindrome(const string &text) {
-    // Check if the given text and its reversed are equal
-    return equal(text.begin(), text.end(), text.rbegin());
+bool is_palindrome(const std::string& text){
+    int begin = 0;
+    int end = text.length() - 1;
+    
+    while (begin < end) {
+        if (text[begin] != text[end]) {
+            return false;
+         }
+        ++begin;
+        --end;
+    }
+    // If we got this far, the string is a palindrome.
+    return true;
 }
 
 #include <chrono>

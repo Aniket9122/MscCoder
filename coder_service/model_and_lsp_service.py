@@ -186,9 +186,9 @@ class ModelAndLSPService:
         import json, os
         from pathlib import Path
 
-        log_dir = Path(f"outputs/logs/{folder_name}")
+        log_dir = Path(f"outputs/logs")
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = (log_dir / "metadata.jsonl").resolve()
+        log_path = (log_dir / f"{folder_name}.jsonl").resolve()
         tmp_path = log_path.with_suffix(".jsonl.tmp")
 
         # Normalize iteration
@@ -291,6 +291,88 @@ class ModelAndLSPService:
         if not folder_name:
             folder_name = "default_model"
         return folder_name
+    
+    def get_task_ids(self,folder_name: str) -> List[str]:
+        """
+        List all non-enhanced C++ files (without the .cpp extension) in:
+            outputs/generated_code/<folder_name>
+
+        Returns: e.g. ["foo", "bar"] for foo.cpp, bar.cpp (ignores foo_enhanced.cpp).
+        """
+        base = pathlib.Path("outputs/generated_code") / folder_name
+        if not base.is_dir():
+            return []
+
+        stems = [
+            p.stem
+            for p in base.iterdir()
+            if p.is_file()
+            and p.suffix.lower() == ".cpp"
+            and not p.stem.endswith("_enhanced")
+        ]
+        # dedupe and sort case-insensitively
+        return sorted(set(stems), key=str.lower)
+    
+    def save_unit_tests(self, task_id: str, folder_name: str, test_results: dict | None = None) -> str:
+        """
+        Upsert one JSONL record into unit_tests/<folder_name>.jsonl with:
+        { "task_id": ..., "compiled": ..., "time_ms": ..., "total_tests": ..., "tests_passed": ... }
+
+        If a record with the same task_id exists, overwrite it; else append.
+        Returns the path to the JSONL file.
+        """
+        import json, os
+        from pathlib import Path
+
+        # Ensure output dir + safe filename
+        out_dir = Path("outputs/unit_tests")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # safe_name = "".join(c if c.isalnum() or c in "-._" else "_" for c in folder_name.strip())
+        log_path = (out_dir / f"{folder_name}.jsonl").resolve()
+        tmp_path = log_path.with_suffix(".jsonl.tmp")
+
+        # Build the minimal record
+        tr = test_results or {}
+        record = {
+            "task_id": task_id,
+            "compiled": bool(tr.get("compiled")),
+            "time_ms": tr.get("time_ms"),
+            "total_tests": tr.get("total_tests"),
+            # accept either "tests_passed" (our runner) or "passed" (alt key)
+            "tests_passed": tr.get("tests_passed"),
+        }
+
+        # Read existing records (if file already exists)
+        records = []
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except Exception:
+                        # skip malformed lines
+                        continue
+
+        # Upsert by task_id
+        updated = False
+        for i, rec in enumerate(records):
+            if rec.get("task_id") == task_id:
+                records[i] = record
+                updated = True
+                break
+        if not updated:
+            records.append(record)
+
+        # Atomic write
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        os.replace(tmp_path, log_path)
+
+        return str(log_path)
 
     '''-----------------------------------------------Service Methods--------------------------------------------------'''
     # def get_code(self,query):
@@ -456,34 +538,35 @@ class ModelAndLSPService:
         with open(file_path, "r", encoding="utf-8") as f:
             data = [json.loads(line) for line in f]
         
-        task = data[0]
+        task = data[1]
         return self.iterative_generate_code(task,model)
 
     def benchmark(self,model: str):
         file_path = "test_dataset.jsonl"
-        folder_name = self.create_folder_name(model)
         with open(file_path, "r", encoding="utf-8") as f:
-            data = [json.loads(line) for line in f]
-        
-        task = data[0]
-        task_id = task["task_id"]
-        unit_test = task["unit_tests"]
+            data = [json.loads(line) for line in f]        
+        folder_name = self.create_folder_name(model) 
+        codes = self.get_task_ids(folder_name)
+        for code in codes:
+            task = next((item for item in data if item["task_id"] == code), None)
+            task_id = task["task_id"]
+            enhanced_task_id = f"{task_id}_enhanced"
+            unit_test = task["unit_tests"]
 
-        llm = run_cpp_tests(
-        folder_name=folder_name,
-        filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
-        unit_tests=unit_test,
-        std="c++14",
-        timeout_sec=10
-        )
-        llm_and_clangd = run_cpp_tests(
-        folder_name=folder_name,
-        filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}_enhanced.cpp",
-        unit_tests=unit_test,
-        std="c++14",
-        timeout_sec=10
-        )
-        return {
-            "llm": llm,
-            "llm_and_clangd": llm_and_clangd
-        }
+            llm = run_cpp_tests(
+            folder_name=folder_name,
+            filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
+            unit_tests=unit_test,
+            std="c++14",
+            timeout_sec=10
+            )
+            llm_and_clangd = run_cpp_tests(
+            folder_name=folder_name,
+            filename_cpp=f"outputs/generated_code/{folder_name}/{enhanced_task_id}.cpp",
+            unit_tests=unit_test,
+            std="c++14",
+            timeout_sec=10
+            )
+            self.save_unit_tests(task_id,folder_name,llm)
+            self.save_unit_tests(enhanced_task_id,folder_name,llm_and_clangd)
+        return "Benchmarking completed for all tasks."
