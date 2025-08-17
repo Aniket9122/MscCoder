@@ -14,18 +14,18 @@ class ModelAndLSPService:
         self.clangd = ClangdClient()
 
     '''-----------------------------------------------helper functions--------------------------------------------------'''
-    def query_extractor(self, filename: str) -> str:
-        name = filename.strip()
-        if not name.lower().endswith(".txt"):
-            name += ".txt"
+    # def query_extractor(self, filename: str) -> str:
+    #     name = filename.strip()
+    #     if not name.lower().endswith(".txt"):
+    #         name += ".txt"
 
-        queries_dir = pathlib.Path(__file__).resolve().parent.parent / "queries"
-        txt_path = queries_dir / name
+    #     queries_dir = pathlib.Path(__file__).resolve().parent.parent / "queries"
+    #     txt_path = queries_dir / name
 
-        query_text = txt_path.read_text(encoding="utf-8", errors="ignore")
-        query_text = "Generate C++ code for the following query: \n" + query_text + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
+    #     query_text = txt_path.read_text(encoding="utf-8", errors="ignore")
+    #     query_text = "Generate C++ code for the following query: \n" + query_text + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
 
-        return query_text
+    #     return query_text
 
     def extract_cpp_code(self,text: str) -> str | None:
         CPP_RE = re.compile(r"```(?:cpp|c\+\+)\s*(.*?)```", re.IGNORECASE | re.DOTALL)
@@ -175,79 +175,137 @@ class ModelAndLSPService:
                 results[name] = hover.get("contents", {}).get("value", "")
         return results
 
-    def generate_logs(self, filename: str, code: str, analysis: str, iteration: int = -1):
-        # Prepare paths
-        log_dir = pathlib.Path("generated_code")
+    def generate_logs(self, folder_name,filename: str, query: str, analysis, iteration: int = -1):
+        """
+        Upsert a single JSONL record in outputs/logs/metadata.jsonl:
+
+        {"task_id": "<filename>", "iteration": <int>, "query": "<...>", "clangd_analysis": <dict|list|str>}
+
+        If a record with the same task_id exists, overwrite it; else append.
+        """
+        import json, os
+        from pathlib import Path
+
+        log_dir = Path(f"outputs/logs/{folder_name}")
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = (log_dir / f"{filename}_log.txt").resolve()
+        log_path = (log_dir / "metadata.jsonl").resolve()
+        tmp_path = log_path.with_suffix(".jsonl.tmp")
 
-        # Prepare iteration label
-        iter_label = iteration if iteration >= 0 else "initial"
+        # Normalize iteration
+        iter_val = iteration if isinstance(iteration, int) and iteration >= 0 else 0
 
-        # Build the entry
-        entry = (
-            "----------------------\n"
-            f"--- iteration number {iter_label} ---\n"  
-            "--- Code generated ---\n"
-            f"{code}\n\n"
-            "--- code analysis ---\n"
-            f"{analysis}\n\n\n"
-        )
+        # Make analysis JSON-serializable
+        if isinstance(analysis, (dict, list)):
+            payload_analysis = analysis
+        else:
+            try:
+                payload_analysis = json.loads(analysis)
+            except Exception:
+                payload_analysis = str(analysis)
 
-        # Append to log file (create if missing)
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(entry)
-        except Exception as e:
-            raise RuntimeError(f"Failed to write log to {log_path}: {e}") from e
+        record = {
+            "task_id": filename,
+            "iteration": iter_val,
+            "query": query,
+            "clangd_analysis": payload_analysis,
+        }
+
+        # Read existing records (if any)
+        records = []
+        if log_path.exists():
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except Exception:
+                        # Skip malformed lines
+                        continue
+
+        # Upsert by task_id
+        idx = next((i for i, r in enumerate(records) if r.get("task_id") == filename), None)
+        if idx is None:
+            records.append(record)
+        else:
+            records[idx] = record
+
+        # Atomic write: write temp then replace
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        os.replace(tmp_path, log_path)
 
 
-    def build_repair_prompt(self, spec: str, current_code: str,
-                            diags_now, diags_orig=None) -> str:
-        """Structured, compact query for the model to *repair* code."""
-        # diag_now  = json.dumps(self._summarize_diags(diags_now), ensure_ascii=False)
-        # diag_orig = json.dumps(self._summarize_diags(diags_orig or []), ensure_ascii=False)
 
-        return f"""You are a careful C++ repair assistant.
-        SPEC (natural language):
-        {spec}
-        CURRENT CODE (fix this):
-        ```cpp
-        {current_code}
-        COMPILER DIAGNOSTICS (current iteration, JSON):
-        {diags_now}
-        REFERENCE DIAGNOSTICS (first iteration, JSON):
-        {diags_orig}
-        CONSTRAINTS:
-        Target standard: -std=c++14 (or compatible with this project).
-        Prefer minimal edits; keep public function signatures and I/O contract unless necessary.
-        No extra files; produce one self-contained translation unit.
-        If you add headers, ensure they exist in standard C++ or are already used elsewhere.
-        Do not include explanations.
-        REPLY FORMAT (strict):
-        Return only the full code, in a single fenced block:
-        <fixed code here>
-        ```"""
+    # def build_repair_prompt(self, spec: str, current_code: str,
+    #                         diags_now, diags_orig=None) -> str:
+    #     """Structured, compact query for the model to *repair* code."""
+    #     # diag_now  = json.dumps(self._summarize_diags(diags_now), ensure_ascii=False)
+    #     # diag_orig = json.dumps(self._summarize_diags(diags_orig or []), ensure_ascii=False)
+
+    #     return f"""You are a careful C++ repair assistant.
+    #     SPEC (natural language):
+    #     {spec}
+    #     CURRENT CODE (fix this):
+    #     ```cpp
+    #     {current_code}
+    #     COMPILER DIAGNOSTICS (current iteration, JSON):
+    #     {diags_now}
+    #     REFERENCE DIAGNOSTICS (first iteration, JSON):
+    #     {diags_orig}
+    #     CONSTRAINTS:
+    #     Target standard: -std=c++14 (or compatible with this project).
+    #     Prefer minimal edits; keep public function signatures and I/O contract unless necessary.
+    #     No extra files; produce one self-contained translation unit.
+    #     If you add headers, ensure they exist in standard C++ or are already used elsewhere.
+    #     Do not include explanations.
+    #     REPLY FORMAT (strict):
+    #     Return only the full code, in a single fenced block:
+    #     <fixed code here>
+    #     ```"""
 
     def extract_asserts(self,code_str: str):
         # Find everything between assert( ... );
         matches = re.findall(r"assert\s*\((.*?)\);", code_str, re.DOTALL)
         return [m.strip() for m in matches]
+    
+    def remove_main_function(self,cpp_path: pathlib.Path):
+        code = cpp_path.read_text(encoding="utf-8")
+        # Remove the main function and its contents
+        code = re.sub(r'\bint\s+main\s*\([^)]*\)\s*{[^}]*}', '', code, flags=re.DOTALL)
+        # Write the modified code back to the file
+        cpp_path.write_text(code, encoding="utf-8")
+
+    def create_folder_name(self, model: str):
+        """
+        Create a folder name based on the model name.
+        This is used to store generated code for different models.
+        """
+        # Replace special characters with underscores and convert to lowercase
+        folder_name = re.sub(r'[^\w\s]', '.', model).lower()
+        # Remove any leading or trailing whitespace
+        folder_name = folder_name.strip()
+        # Ensure the folder name is not empty
+        if not folder_name:
+            folder_name = "default_model"
+        return folder_name
 
     '''-----------------------------------------------Service Methods--------------------------------------------------'''
-    def get_code(self,query):
-        query = "Generate C++ code for the following query: \n" + query + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
-        response = generate(query)
-        code = self.extract_cpp_code(response)
-        if not code:
-            return f"No code generated: {response}"
-        cpp_path = pathlib.Path(f"generated_code/car_race_collision_enhanced.cpp").resolve()
-        cpp_path.write_text(code, encoding="utf-8")
-        return code
+    # def get_code(self,query):
+    #     query = "Generate C++ code for the following query: \n" + query + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
+    #     response = generate(query)
+    #     code = self.extract_cpp_code(response)
+    #     if not code:
+    #         return f"No code generated: {response}"
+    #     cpp_path = pathlib.Path(f"outputs/generated_code/car_race_collision_enhanced.cpp").resolve()
+    #     cpp_path.write_text(code, encoding="utf-8")
+    #     return code
 
-    def analyze_code(self,filename:str) -> List[str]:
+    def analyze_code(self,cpp_path: pathlib.Path) -> List[str]:
         clangd = ClangdClient()
-        cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
+        # cpp_path = pathlib.Path(f"outputs/generated_code/{filename}.cpp").resolve()
         code = cpp_path.read_text(encoding="utf-8")
         uri = cpp_path.as_uri()
   
@@ -270,100 +328,162 @@ class ModelAndLSPService:
         return analysis
 
 
-    def generate_enhanced_code(self, task):
-        query = task["prompt"]
-        filename = task["task_id"]
-        code = task["buggy_code"]
+    # def generate_enhanced_code(self, task):
+    #     query = task["prompt"]
+    #     filename = task["task_id"]
+    #     code = task["buggy_code"]
 
-        cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
-        cpp_path.write_text(code, encoding="utf-8")
-        print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
+    #     cpp_path = pathlib.Path(f"outputs/generated_code/{filename}.cpp").resolve()
+    #     cpp_path.write_text(code, encoding="utf-8")
+    #     print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
         
-        iteration = 0
-        code_analysis = self.analyze_code(filename)
-        self.generate_logs(filename, code, code_analysis, iteration)
-        original_analysis = copy.deepcopy(code_analysis)
-        original_code = code + "" # Store the original code for reference
-        enhanced_code = code + "" # Deep copy of the original code
-        filename_enhanced = f"{filename}_enhanced"
-        while True:
-            iteration += 1
-            print("******\n******\n******\n Iteration number: ", iteration, "\n******\n******\n******")
-            new_query = self.build_repair_prompt(
-                spec=query,                                 # the original natural-language task
-                current_code=enhanced_code,                 # current file contents
-                diags_now=code_analysis,                    # diagnostics from this iteration
-                diags_orig=original_analysis                # first-iteration reference
-            )
-            print(f"New query for iteration {iteration}: {new_query}")
-            enhanced_response = generate(new_query)
-            code = self.extract_cpp_code(enhanced_response)
-            if not code:
-                enhanced_code = enhanced_code
-            else:
-                enhanced_code = self.clean_cpp_code(code)
-            enhanced_path = pathlib.Path(f"generated_code/{filename_enhanced}.cpp").resolve()
-            enhanced_path.write_text(enhanced_code, encoding="utf-8")
-            code_analysis = self.analyze_code(filename_enhanced)
-            self.generate_logs(filename, enhanced_code, code_analysis, iteration)
-            if (code_analysis["diagnostics"] == []) or (iteration >= 5):
-                print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
-                break
-        return iteration
+    #     iteration = 0
+    #     code_analysis = self.analyze_code(filename)
+    #     self.generate_logs(filename, code, code_analysis, iteration)
+    #     original_analysis = copy.deepcopy(code_analysis)
+    #     original_code = code + "" # Store the original code for reference
+    #     enhanced_code = code + "" # Deep copy of the original code
+    #     filename_enhanced = f"{filename}_enhanced"
+    #     while True:
+    #         iteration += 1
+    #         print("******\n******\n******\n Iteration number: ", iteration, "\n******\n******\n******")
+    #         new_query = self.build_repair_prompt(
+    #             spec=query,                                 # the original natural-language task
+    #             current_code=enhanced_code,                 # current file contents
+    #             diags_now=code_analysis,                    # diagnostics from this iteration
+    #             diags_orig=original_analysis                # first-iteration reference
+    #         )
+    #         print(f"New query for iteration {iteration}: {new_query}")
+    #         enhanced_response = generate(new_query)
+    #         code = self.extract_cpp_code(enhanced_response)
+    #         if not code:
+    #             enhanced_code = enhanced_code
+    #         else:
+    #             enhanced_code = self.clean_cpp_code(code)
+    #         enhanced_path = pathlib.Path(f"outputs/generated_code/{filename_enhanced}.cpp").resolve()
+    #         enhanced_path.write_text(enhanced_code, encoding="utf-8")
+    #         code_analysis = self.analyze_code(filename_enhanced)
+    #         self.generate_logs(filename, enhanced_code, code_analysis, iteration)
+    #         if (code_analysis["diagnostics"] == []) or (iteration >= 5):
+    #             print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
+    #             break
+    #     return iteration
 
-    def generateOnce(self, task):
+    def generate_code(self, task,model):
         query = task["prompt"]
         filename = task["task_id"]
-        unit_tests = self.extract_asserts(task["unit_tests"])[:5]
-        # code = task["buggy_code"]
-        # cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
-        # cpp_path.write_text(code, encoding="utf-8")
+        unit_tests = self.extract_asserts(task["unit_tests"])[:3]
+        folder_name = self.create_folder_name(model)
         query = "Generate C++ code for the following query: \n" + query + "\nThese are few unit test that the code should be able to pass"+str(unit_tests)+"\nAlso provide the entire improved code in the format: ```cpp<code>```"
-        response = generate(query)
+        response = generate(model,query)
         code = self.extract_cpp_code(response)
         if not code:
             return f"No code generated: {response}"
-        cpp_path = pathlib.Path(f"generated_code/{filename}.cpp").resolve()
+        cpp_path = pathlib.Path(f"outputs/generated_code/{folder_name}/{filename}.cpp").resolve()
+        cpp_path.parent.mkdir(parents=True, exist_ok=True)
         cpp_path.write_text(code, encoding="utf-8")
         print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
-        code_analysis = self.analyze_code(filename)
-        self.generate_logs(filename, query, code_analysis)
+        code_analysis = self.analyze_code(cpp_path)
+        self.generate_logs(folder_name,filename, query, code_analysis)
         new_query = f"""This is the initial query given to the llm to generate a cpp code: \n{query}
                     \nThis is the code generated by the llm{code}.
                     \n these are the diagnostics generated by clangd for above code: {code_analysis}   
                     \nNow, please enhance the code by fixing any issues and improving its quality based on the diagnostic provided.
                     \nAlso provide the entire improved code in the format: ```cpp<code>```"
                     """
-        enhanced_response = generate(new_query)
+        enhanced_response = generate(model,new_query)
         enhanced_code = self.extract_cpp_code(enhanced_response)
         if not enhanced_code:
             return f"No code generated:-\n{enhanced_response}"
-        enhanced_path = pathlib.Path(f"generated_code/{filename}_enhanced.cpp").resolve()
+        enhanced_path = pathlib.Path(f"outputs/generated_code/{folder_name}/{filename}_enhanced.cpp").resolve()
+        enhanced_path.parent.mkdir(parents=True, exist_ok=True)
         enhanced_path.write_text(enhanced_code, encoding="utf-8")
+        self.generate_logs(folder_name,f"{filename}_enhanced", new_query, analysis=self.analyze_code(enhanced_path))
+        self.remove_main_function(cpp_path)
+        self.remove_main_function(enhanced_path)
         return enhanced_response
 
-    def generate(self):
-        file_path = "test_dataset.jsonl"
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = [json.loads(line) for line in f]
-        
-        task = data[1]
-        return self.generateOnce(task)
-        # return self.generate_enhanced_code(task)
+    def iterative_generate_code(self, task,model):
+        query = task["prompt"]
+        filename = task["task_id"]
+        unit_tests = self.extract_asserts(task["unit_tests"])[:3]
+        folder_name = self.create_folder_name(model)
+        query = "Generate C++ code for the following query: \n" + query + "\nThese are few unit test that the code should be able to pass"+str(unit_tests)+"\nAlso provide the entire improved code in the format: ```cpp<code>```"
+        response = generate(model,query)
+        code = self.extract_cpp_code(response)
+        if not code:
+            return f"No code generated: {response}"
+        cpp_path = pathlib.Path(f"outputs/generated_code/{folder_name}/{filename}.cpp").resolve()
+        cpp_path.parent.mkdir(parents=True, exist_ok=True)
+        cpp_path.write_text(code, encoding="utf-8")
+        print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
+        code_analysis = self.analyze_code(cpp_path)
+        self.generate_logs(folder_name,filename, query, code_analysis)
+        iteration = 0
+        original_analysis = copy.deepcopy(code_analysis)
+        original_code = code + "" # Store the original code for reference
+        enhanced_code = code + "" # Deep copy of the original code
+        filename_enhanced = f"{filename}_enhanced"
+        while True:
+            iteration += 1
+            print("******\n******\n******\n Task_id: ",filename," Iteration number: ", iteration, "\n******\n******\n******")
+            new_query = f"""This is the initial query given to the llm to generate a cpp code: \n{query}
+                        \nThis is the code generated by the llm{original_code}.
+                        \n these are the diagnostics generated by clangd for above code: {original_analysis}.
+                        \nThis is the code generated by the llm in the previous iteration: {enhanced_code}.
+                        \n these are the diagnostics generated by clangd for above code: {code_analysis}   
+                        \nNow, please enhance the code by fixing any issues and improving its quality based on the diagnostic provided.
+                        \nAlso provide the entire improved code in the format: ```cpp<code>```"
+                        """
+            enhanced_response = generate(model,new_query)
+            enhanced_code = self.extract_cpp_code(enhanced_response)
+            if not enhanced_code:
+                return f"No code generated:-\n{enhanced_response}"
+            enhanced_path = pathlib.Path(f"outputs/generated_code/{folder_name}/{filename_enhanced}.cpp").resolve()
+            enhanced_path.parent.mkdir(parents=True, exist_ok=True)
+            enhanced_path.write_text(enhanced_code, encoding="utf-8")
+            code_analysis = self.analyze_code(enhanced_path)
+            self.generate_logs(folder_name,filename_enhanced, new_query, analysis=code_analysis, iteration=iteration)
+            if (code_analysis["diagnostics"] == []) or (iteration >= 5):
+                print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
+                break
+        self.remove_main_function(cpp_path)
+        self.remove_main_function(enhanced_path)
+        return enhanced_response
 
-    def benchmark(self):
+    def generate(self,model: str):
         file_path = "test_dataset.jsonl"
         with open(file_path, "r", encoding="utf-8") as f:
             data = [json.loads(line) for line in f]
         
-        task = data[1]
+        task = data[0]
+        return self.iterative_generate_code(task,model)
+
+    def benchmark(self,model: str):
+        file_path = "test_dataset.jsonl"
+        folder_name = self.create_folder_name(model)
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = [json.loads(line) for line in f]
+        
+        task = data[0]
         task_id = task["task_id"]
         unit_test = task["unit_tests"]
 
-        result = run_cpp_tests(
-        filename_cpp=f"generated_code/{task_id}_enhanced.cpp",
+        llm = run_cpp_tests(
+        folder_name=folder_name,
+        filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
         unit_tests=unit_test,
-        std="c++17",
+        std="c++14",
         timeout_sec=10
         )
-        return result
+        llm_and_clangd = run_cpp_tests(
+        folder_name=folder_name,
+        filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}_enhanced.cpp",
+        unit_tests=unit_test,
+        std="c++14",
+        timeout_sec=10
+        )
+        return {
+            "llm": llm,
+            "llm_and_clangd": llm_and_clangd
+        }
