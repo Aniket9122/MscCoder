@@ -538,8 +538,9 @@ class ModelAndLSPService:
         with open(file_path, "r", encoding="utf-8") as f:
             data = [json.loads(line) for line in f]
         
-        task = data[1]
-        return self.iterative_generate_code(task,model)
+        for task in data:
+            self.iterative_generate_code(task,model)
+        return "Code generation Completed."
 
     def benchmark(self,model: str):
         file_path = "test_dataset.jsonl"
