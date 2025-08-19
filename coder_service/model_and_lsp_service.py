@@ -373,7 +373,21 @@ class ModelAndLSPService:
         os.replace(tmp_path, log_path)
 
         return str(log_path)
-
+    
+    def check_task_id_exists(self, task_id: str, folder_name: str) -> bool:
+        """
+        Check if a task_id exists in the logs.
+        This is used to avoid reprocessing tasks that have already been completed.
+        """
+        logs_path = pathlib.Path(f"outputs/logs/{folder_name}.jsonl")
+        with open(logs_path, "r", encoding="utf-8") as f:
+            logs = [json.loads(line) for line in f]
+        
+        for log in logs:
+            if log["task_id"] == task_id:
+                return True
+        return False
+            
     '''-----------------------------------------------Service Methods--------------------------------------------------'''
     # def get_code(self,query):
     #     query = "Generate C++ code for the following query: \n" + query + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
@@ -537,9 +551,14 @@ class ModelAndLSPService:
         file_path = "test_dataset.jsonl"
         with open(file_path, "r", encoding="utf-8") as f:
             data = [json.loads(line) for line in f]
-        
+                
         for task in data:
-            self.iterative_generate_code(task,model)
+            task_id = task["task_id"]
+            enhanced_task_id = f"{task_id}_enhanced"
+            if self.check_task_id_exists(task_id, self.create_folder_name(model)) and self.check_task_id_exists(enhanced_task_id, self.create_folder_name(model)):
+                print(f"Task {task_id} already exists in logs. Skipping...")
+            else:
+                self.iterative_generate_code(task,model)
         return "Code generation Completed."
 
     def benchmark(self,model: str):
