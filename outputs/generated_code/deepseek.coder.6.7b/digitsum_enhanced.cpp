@@ -1,16 +1,13 @@
-#include <iostream>
-#include <cctype>   // Required to use isupper function
+#include<string>
 using namespace std;
-
-// Function to compute the sum of ASCII codes of uppercase characters in a string
-int digitSum(string s) {
-    int total_sum = 0;    // Total Sum for all Upper case letters in the string
-    for (char& c : s) {
-        if (isupper(c)) {
-            total_sum += int(c); 
+int digitSum(string s){
+    int total = 0; // initializing total to 0 at the start and not inside for loop as per good coding practices
+    
+    for(char &c : s) { // using range-based 'for' loops instead of traditional one
+        if (isupper(static_cast<unsigned char>(c))) { // casting c to unsigned char before passing to isupper to prevent undefined behavior in case of negative values
+            total += static_cast<int>(c); 
         }
     }
-    return total_sum;
-}
 
-// Main function to test digitSum Function
+    return total;
+}

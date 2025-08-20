@@ -1,21 +1,23 @@
-#include <algorithm>
+#include<iostream>
+#include<string>
 using namespace std;
 
-string solve(const string& s) {
-    string result = s;
-    bool hasLetter = false;
-    
-    for (auto & c: result) {
-        if (isalpha(c)) {
-            hasLetter = true;
-            if (islower(c)) 
-                c = toupper(c);
+string solve(string s){
+    for (int i=0; i<s.length(); ++i) {
+        if (isalpha(s[i])){
+            if (islower(s[i]))
+                s[i] = toupper(s[i]);
             else 
-                c = tolower(c);
-       <｜begin▁of▁sentence｜>}
+                s[i] = tolower(s[i]);
+        }
     }
     
-    if (!hasLetter) reverse(result.begin(), result.end());
+    // If no alphabets are found, reverse the string.
+    if (!isalpha(s[0])){
+        for (int i=0; i<s.length()/2; ++i){
+            swap(s[i], s[s.length()-1-i]);
+        }
+    }
     
-    return result;
+    return s;
 }
