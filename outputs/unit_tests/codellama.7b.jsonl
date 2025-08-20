@@ -11,7 +11,7 @@
 {"task_id": "any_int", "compiled": true, "time_ms": 0, "total_tests": 10, "tests_passed": 9}
 {"task_id": "any_int_enhanced", "compiled": true, "time_ms": 0, "total_tests": 10, "tests_passed": 9}
 {"task_id": "below_threshold", "compiled": true, "time_ms": 0, "total_tests": 282, "tests_passed": 282}
-{"task_id": "below_threshold_enhanced", "compiled": false, "time_ms": null, "total_tests": null, "tests_passed": null}
+{"task_id": "below_threshold_enhanced", "compiled": true, "time_ms": 0, "total_tests": 282, "tests_passed": 282}
 {"task_id": "below_zero", "compiled": true, "time_ms": 0, "total_tests": 909, "tests_passed": 249}
 {"task_id": "below_zero_enhanced", "compiled": true, "time_ms": 0, "total_tests": 909, "tests_passed": 249}
 {"task_id": "bf", "compiled": false, "time_ms": null, "total_tests": null, "tests_passed": null}

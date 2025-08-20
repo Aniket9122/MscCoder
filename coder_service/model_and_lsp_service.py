@@ -374,15 +374,14 @@ class ModelAndLSPService:
 
         return str(log_path)
     
-    def check_task_id_exists(self, task_id: str, folder_name: str) -> bool:
+    def check_task_id_exists(self, task_id: str, path: pathlib.Path) -> bool:
         """
         Check if a task_id exists in the logs.
         This is used to avoid reprocessing tasks that have already been completed.
         """
-        logs_path = pathlib.Path(f"outputs/logs/{folder_name}.jsonl")
-        if not logs_path.exists():
+        if not path.exists():
             return False
-        with open(logs_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             logs = [json.loads(line) for line in f]
         
         for log in logs:
@@ -557,7 +556,7 @@ class ModelAndLSPService:
         for task in data:
             task_id = task["task_id"]
             enhanced_task_id = f"{task_id}_enhanced"
-            if self.check_task_id_exists(task_id, self.create_folder_name(model)) and self.check_task_id_exists(enhanced_task_id, self.create_folder_name(model)):
+            if self.check_task_id_exists(task_id,pathlib.Path(f"outputs/logs/{self.create_folder_name(model)}.jsonl")) and self.check_task_id_exists(enhanced_task_id, pathlib.Path(f"outputs/logs/{self.create_folder_name(model)}.jsonl")):
                 print(f"Task {task_id} already exists in logs. Skipping...")
             else:
                 self.iterative_generate_code(task,model)
@@ -575,22 +574,25 @@ class ModelAndLSPService:
             enhanced_task_id = f"{task_id}_enhanced"
             unit_test = task["unit_tests"]
 
-            llm = run_cpp_tests(
-            folder_name=folder_name,
-            filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
-            unit_tests=unit_test,
-            std="c++14",
-            timeout_sec=60
-            )
-            print(f"Unit tests for {task_id} completed: {llm}")
-            llm_and_clangd = run_cpp_tests(
-            folder_name=folder_name,
-            filename_cpp=f"outputs/generated_code/{folder_name}/{enhanced_task_id}.cpp",
-            unit_tests=unit_test,
-            std="c++14",
-            timeout_sec=60
-            )
-            print(f"Unit tests for {enhanced_task_id} completed: {llm_and_clangd}")
-            self.save_unit_tests(task_id,folder_name,llm)
-            self.save_unit_tests(enhanced_task_id,folder_name,llm_and_clangd)
+            if self.check_task_id_exists(task_id, pathlib.Path(f"outputs/unit_tests/{self.create_folder_name(model)}.jsonl")) and self.check_task_id_exists(enhanced_task_id, pathlib.Path(f"outputs/unit_tests/{self.create_folder_name(model)}.jsonl")):
+                print(f"Task {task_id} already exists in unit tests. Skipping...")
+            else:
+                llm = run_cpp_tests(
+                folder_name=folder_name,
+                filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
+                unit_tests=unit_test,
+                std="c++14",
+                timeout_sec=60
+                )
+                print(f"Unit tests for {task_id} completed: {llm}")
+                self.save_unit_tests(task_id,folder_name,llm)
+                llm_and_clangd = run_cpp_tests(
+                folder_name=folder_name,
+                filename_cpp=f"outputs/generated_code/{folder_name}/{enhanced_task_id}.cpp",
+                unit_tests=unit_test,
+                std="c++14",
+                timeout_sec=60
+                )
+                print(f"Unit tests for {enhanced_task_id} completed: {llm_and_clangd}")
+                self.save_unit_tests(enhanced_task_id,folder_name,llm_and_clangd)
         return "Benchmarking completed for all tasks."
