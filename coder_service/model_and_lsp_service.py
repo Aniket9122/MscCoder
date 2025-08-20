@@ -380,6 +380,8 @@ class ModelAndLSPService:
         This is used to avoid reprocessing tasks that have already been completed.
         """
         logs_path = pathlib.Path(f"outputs/logs/{folder_name}.jsonl")
+        if not logs_path.exists():
+            return False
         with open(logs_path, "r", encoding="utf-8") as f:
             logs = [json.loads(line) for line in f]
         
@@ -540,7 +542,7 @@ class ModelAndLSPService:
             enhanced_path.write_text(enhanced_code, encoding="utf-8")
             code_analysis = self.analyze_code(enhanced_path)
             self.generate_logs(folder_name,filename_enhanced, new_query, analysis=code_analysis, iteration=iteration)
-            if (code_analysis["diagnostics"] == []) or (iteration >= 5):
+            if (code_analysis["diagnostics"] == []) or (code_analysis["diagnostics"][0]["code"] == "unused-includes") or (iteration >= 5):
                 print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
                 break
         self.remove_main_function(cpp_path)
@@ -578,15 +580,17 @@ class ModelAndLSPService:
             filename_cpp=f"outputs/generated_code/{folder_name}/{task_id}.cpp",
             unit_tests=unit_test,
             std="c++14",
-            timeout_sec=10
+            timeout_sec=60
             )
+            print(f"Unit tests for {task_id} completed: {llm}")
             llm_and_clangd = run_cpp_tests(
             folder_name=folder_name,
             filename_cpp=f"outputs/generated_code/{folder_name}/{enhanced_task_id}.cpp",
             unit_tests=unit_test,
             std="c++14",
-            timeout_sec=10
+            timeout_sec=60
             )
+            print(f"Unit tests for {enhanced_task_id} completed: {llm_and_clangd}")
             self.save_unit_tests(task_id,folder_name,llm)
             self.save_unit_tests(enhanced_task_id,folder_name,llm_and_clangd)
         return "Benchmarking completed for all tasks."
