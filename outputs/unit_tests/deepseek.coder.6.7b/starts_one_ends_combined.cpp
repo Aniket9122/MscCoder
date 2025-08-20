@@ -1,11 +1,19 @@
 #include<iostream>
 using namespace std;
-
-
-  
-    cout << (dp[n][0] + dp[n][1]) * 9;  // Multiplying by 9 as there are 9 possible starting/ending digits other than 1 for n-digit numbers.
+long long starts_one_ends(int n) {
+    if (n == 1) return 2; // special case for single digit numbers
     
-    return 0;
+    long long dp[n+1];
+    dp[0] = dp[1] = 0; // base cases
+  
+    for (int i=2; i<=n; ++i) {
+        if(i == 2) 
+            dp[i] = 8;
+        else
+            dp[i] = dp[i-1]*2 + dp[i-2]*8; // formula to find the count of n digit numbers starting or ending with 1.
+    }
+  
+    return dp[n];
 }
 
 #include <chrono>

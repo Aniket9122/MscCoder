@@ -1,15 +1,14 @@
-#include<iostream>
-#include<vector>
+#include <vector>
 using namespace std;
+
 int can_arrange(vector<int> arr){
-    int maxIndex = -1;
-    for (unsigned int i = 0; i < arr.size() - 1; ++i) {
-        if (arr[i] >= arr[i + 1]) {
-            maxIndex = i+1; // +1 because index starts from 0 in C++
-            break;
+    for(size_t i = 1; i < arr.size(); ++i){
+        if (arr[i] >= arr[i-1]) {
+            return static_cast<int>(i-1); // convert size_t to int
         }
-   <｜begin▁of▁sentence｜>}
-    return maxIndex;}
+    }
+    return -1;
+}
 
 #include <chrono>
 #include <iostream>

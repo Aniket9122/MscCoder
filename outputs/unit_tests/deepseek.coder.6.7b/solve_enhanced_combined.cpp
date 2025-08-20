@@ -1,21 +1,25 @@
-#include <algorithm>  // For std::reverse and std::any_of
-#include <cctype>     // For isalpha and tolower/toupper functions
+#include<iostream>
+#include<string>
 using namespace std;
 
-string solve(const string& s) {
-    string result = s;
-        
-    bool hasLetter = any_of(result.begin(), result.end(), ::isalpha);
-    
-    for (auto & c : result) 
-    {
-        if (::isalpha(c)) 
-            c ^= ' '; // Flip case of the character
+string solve(string s){
+    for  (size_t i = 0; i < s.length(); ++i) {
+        if  (isalpha(s[i])){
+            if  (islower(s[i]))
+                s[i] = toupper(s[i]);
+            else 
+                s[i] = tolower(s[i]);
+         }
     }
-        
-    if (!hasLetter) reverse(result.begin(), result.end()); // Reverse string if no letters were found in the string
     
-    return result;
+    // If no alphabets are found, reverse the string.
+    if (!isalpha(s[0])){
+        for (size_t i = 0; i < s.length() / 2; ++i){
+            swap(s[i], s[s.length() - 1 - i]);
+         }
+     }
+
+    return s;
 }
 
 #include <chrono>

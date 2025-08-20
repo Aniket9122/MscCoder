@@ -25,19 +25,6 @@ bool issame(vector<float> a, vector<float> b){
     return true;
 }
 
-;
-    vector<float> b = {5, 3, -5, 2, -3, 3, 9, 0, 123, 1, -10};
-    vector<float> c = {-1, -2};
-  
-    assert(issame(get_positive(a), {5, 6}));
-    assert(issame(get_positive(b), {5, 3, 2, 3, 9, 123, 1}));
-    assert(issame(get_positive(c), {}));  
-    
-    cout << "All test cases passed!" << endl;
-
-    return 0;
-}
-
 #include <chrono>
 #include <iostream>
 #undef NDEBUG

@@ -1,53 +1,60 @@
-#include<iostream>
-#include<vector>
-#include<stack>
+#include <iostream>
+#include <vector>
+#include <string>
+#include <stack>
 using namespace std;
 
-int do_algebra(vector<string> operato, vector<int> operand){
-    stack<double> s;
-    for(int i=0; i<operand.size(); ++i){
-        if(operato.size() > i){
-            if(operato[i]=="+"){ // addition
-                double second_op = s.top();
-                s.pop();
-                double first_op = s.top();
-                s.pop();
-                s.push(first_op + second_op);
+int precedence(char op){
+    if(op == '+'||op == '-')
+        return 1;
+    if(op == '*'||op == '/')
+        return 2;
+    if(op == '^')
+        return 3;
+    return 0;
+}
+
+int applyOp(int a, int b, char op){
+    switch(op){
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return a / b;
+        case '^': return pow(a, b); // You need to include cmath for this operation 
+    }
+}
+
+int evaluate(vector<string> operato, vector<int> operand){
+    int i;
+  
+    stack <int> values;
+    stack <char> ops;
+    
+    for (i = 0; i < operand.size(); i++) {
+        if (operato[i] == " ") {
+            while (!ops.empty() && precedence(ops.top()) >= precedence((operato[i])[0])){
+                int val2 = values.top(); values.pop();
+                int val1 = values.top(); values.pop();
+                char op = ops.top(); ops.pop();
+                
+                values.push(applyOp(val1, val2, op));
             }
-            else if(operato[i]=="-"){ // subtraction
-                double second_op = s.top();
-                s.pop();
-                double first_op = s.top();
-                s.pop();
-                s.push(first_op - second_op);
-           <｜begin▁of▁sentence｜>span>} 
-            else if(operato[i]=="*"){ // multiplication
-                double second_op = s.top();
-                s.pop();
-                double first_op = s.top();
-                s.pop();
-                s.push(first_op * second_op);
-            } 
-            else if(operato[i]=="/"){ // division
-                double second_op = s.top();
-                s.pop();
-                double first_op = s.top();
-                s.pop();
-                s.push(first_op / second_op);
-            } 
-            else if(operato[i]=="**"){ // exponentiation
-                double second_op = s.top();
-                s.pop();
-                double first_op = s.top();
-                s.pop();
-                s.push(pow(first_op, second_op));
-            } 
-        else {
-            s.push((double)operand[i]); // operands
-          }
+            
+            ops.push((operato[i])[0]);
+        } else {
+            values.push(operand[i]);
         }
     }
-    return (int)s.top();
+    
+    while (!ops.empty()) {
+        int val2 = values.top(); values.pop();
+        int val1 = values.top(); values.pop();
+        char op = ops.top(); ops.pop();
+        
+        values.push(applyOp(val1, val2, op));
+    }
+    
+    return values.top();
 }
 
 #include <chrono>

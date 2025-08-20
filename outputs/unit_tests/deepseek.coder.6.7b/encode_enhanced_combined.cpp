@@ -1,26 +1,33 @@
 #include <iostream>
 #include <string>
+#include <algorithm>
 using namespace std;
 
-char encode_vowel(char c) {
-    string vowels = "aeiouAEIOU";
-    char encoded_vowels[] = {'c', 'g', 'C', 'G', 'E'};  // Characters that are two positions after a, e, i, o, u in the English alphabet.
-    
-    size_t found = vowels.find(c);
-    if (found != string::npos){   // If the character is a vowel, replace it with its encoded counterpart.
-        return encoded_vowels[found];
-    } else {  // If not a vowel, keep it as is.
-        return c;
-    }
+char shift(char c){
+    // Shifts alphabet by 2 places ahead (circular)
+    if((c >= 'a' && c < 'z') || (c >= 'A' && c < 'Z')) {
+        char base = isupper(c) ? 'A': 'a';
+        return char((c - base + 3) % 26 + base);
+     }
+    return c; // If not an alphabet, just return it.
 }
 
-string encode(string message) {
-    for (int i = 0; i < message.length(); ++i){  
-        if((message[i] >= 'a' && message[i] <= 'z') || (message[i] >= 'A' && message[i] <= 'Z')){  // If the character is a letter, encode it.
-            message[i] = encode_vowel(message[i]); 
-        }     
-    }
-    return message;
+string encode(const string& message){
+   string encoded_message = "";
+   transform(message.begin(), message.end(), back_inserter(encoded_message), [](char c) { 
+       if (isalpha(c)) {
+           if((tolower(c) == 'a') || (tolower(c) == 'e') || (tolower(c) == 'i') || (tolower(c) == 'o') || (tolower(c) == 'u')){
+               return shift(shift(c)); // Twice shifted for vowels.
+            } 
+           else {
+               return shift(c);   // Once shifted for consonants and special characters.
+            }
+        }
+       else {
+       	   return c;  // Add special character as it is.
+        }});
+   
+   return encoded_message;
 }
 
 #include <chrono>

@@ -1,60 +1,67 @@
-#include<iostream>
-#include<vector>
-#include<stack>
-#include<stdexcept> 
+#include <iostream>
+#include <vector>
+#include <string>
+#include <stack>
 using namespace std;
 
-double calculate(string op, double a, double b) {
-    if (op == "+") return a + b;
-    else if (op == "-") return a - b;
-    else if (op == "*") return a * b;
-    else if (op == "/" && b != 0.0) return a / b;   // Avoid division by zero
-    else if (op == "**") return pow(a, b);
-    
-    throw invalid_argument("Invalid operator: " + op);
+int precedence(char op){
+    if (op == '+'||op == '-')
+        return 1;
+    if (op == '*'||op == '/')
+        return 2;
+    if (op == '^')
+        return 3;
+    return 0;
 }
 
-int do_algebra(vector<string> operators, vector<int> operands) {
-    stack<double> sOperand;   // stack for storing operands
-    stack<string> sOperator;   // stack for storing operators
-    
-    for (size_t i = 0; i < operands.size(); ++i) {
-        if(operators.size() > i){
-            string op = operators[i];
-            
-            while (!sOperator.empty() && calculate(op, 0, 0) <= calculate(sOperator.top(), 0, 0)){
-                double second_op = sOperand.top(); 
-                sOperand.pop();
-                
-                double first_op = sOperand.top(); 
-                sOperand.pop();
-                
-                string prevOp = sOperator.top();
-                sOperator.pop();
-                
-                sOperand.push(calculate(prevOp, first_op, second_op));  // calculate and push back the result to operand stack
-            }
-            
-            sOperator.push(op);   // Push the current operator into operator stack
-         }
-        
-        sOperand.push((double)operands[i]);      // Push the current operand into operand stack
+int applyOp(int a, int b, char op){
+    switch(op){
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': if (b != 0) return a / b; else throw "Division by zero";  // Handle division by zero
+        case '^': return pow(a, b);  
      }
-    
-    while (!sOperator.empty()) {    // Evaluate remaining operators
-        double second_op = sOperand.top(); 
-        sOperand.pop();
-        
-        double first_op = sOperand.top(); 
-        sOperand.pop();
-        
-        string op = sOperator.top();
-        sOperator.pop();
+    return 0; // Return statement for all possible inputs to avoid warnings from compiler.
+}
+
+int evaluate(vector<string> operators, vector<int> operands){
+    if (operands.size() < 2) {
+        throw "Invalid input";  
+    }
       
-        sOperand.push(calculate(op, first_op, second_op));  // calculate and push back the result to operand stack
-     }
+    stack <int> values;
+    stack <char> ops;
     
-    return (int)sOperand.top();    // Return final result from operand stack
+    for(unsigned int i = 0; i<operators.size(); i++){
+            while(!ops.empty() && precedence(ops.top()) >= precedence(operators[i][0])){
+                int val2 = values.top(); values.pop();
+                int val1 = values.top(); values.pop();
+                char op = ops.top(); ops.pop();
+                
+                if (op == '/' && val2 == 0) {   // Avoid division by zero
+                    throw "Division by zero";
+                } else {
+                    values.push(applyOp(val1, val2, op));  
+                }
+             }
+            
+            ops.push(operators[i][0]);    
+    }
+    
+    while(!ops.empty()) {
+        int val2 = values.top(); values.pop();
+        int val1 = values.top(); values.pop();
+        char op = ops.top(); ops.pop();
+        
+        if (op == '/' && val2 == 0) {   // Avoid division by zero
+            throw "Division by zero";
+        } else {
+            values.push(applyOp(val1, val2, op));  
+        }
+    }
+    
+    return values.top();    
 }
 
 #include <chrono>

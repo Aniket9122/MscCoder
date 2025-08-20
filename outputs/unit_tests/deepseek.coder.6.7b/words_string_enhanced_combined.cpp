@@ -1,31 +1,29 @@
 #include <iostream>
 #include <vector>
-#include <sstream>  // for istringstream
-#include <string>   // for string
-using namespace std;
+#include <sstream>
+using std::vector;
+using std::string;
+using std::istringstream;
 
-// Function to split a string of words by comma or space into a vector of strings
+// Function to split string into words
 vector<string> words_string(const string& s) {
-    vector<string> words;   // Create an empty vector to store the words
-    istringstream iss(s);   // Create an input stream from the input string
-    string word;            // Temporary variable for storing each word
+    vector<string> result;  // Vector to store the output
+    istringstream ss(s);   // Used for breaking up the strings
+    string word;            // To store individual words
     
-    while (getline(iss, word, ',')) { 
-        size_t pos = 0;
-        while ((pos = word.find(" ")) != std::string::npos) { 
-            if (!word.substr(0, pos).empty()) // Check for any leading spaces in the substring
-                words.push_back(word.substr(0, pos));
-            word = word.substr(pos + 1);   // remove this space and continue to next part of string
-        }
-        
-        if (!word.empty())   // If there are no trailing spaces in the last word
-             words.push_back(word);
-    }
-    
-    return words;
+    while (ss >> word) { 
+        if (!word.empty()) { 
+             // Remove any trailing comma or space from each word
+             while(word.back() == ',' || word.back() == ' '){
+                 word = word.substr(0, word.size()-1);
+             }
+             
+            result.push_back(word);  // Add the word to vector
+         }
+     }
+     
+    return result;
 }
-
-// Test function
 
 #include <chrono>
 #include <iostream>
