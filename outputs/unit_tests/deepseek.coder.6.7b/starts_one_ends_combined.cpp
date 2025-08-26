@@ -1,0 +1,66 @@
+#include<iostream>
+using namespace std;
+long long starts_one_ends(int n) {
+    if (n == 1) return 2; // special case for single digit numbers
+    
+    long long dp[n+1];
+    dp[0] = dp[1] = 0; // base cases
+  
+    for (int i=2; i<=n; ++i) {
+        if(i == 2) 
+            dp[i] = 8;
+        else
+            dp[i] = dp[i-1]*2 + dp[i-2]*8; // formula to find the count of n digit numbers starting or ending with 1.
+    }
+  
+    return dp[n];
+}
+
+#include <chrono>
+#include <iostream>
+#undef NDEBUG
+#include<assert.h>
+int main(){
+    using clock = std::chrono::steady_clock;
+    auto __start = clock::now();
+    long long time_taken_ms = 0;
+    int tests_passed = 0;
+    int total_tests = 0;
+
+    if((starts_one_ends(1) == 1)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(2) == 18)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(3) == 180)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(4) == 1800)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(5) == 18000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(1) == 1)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(2) == 18)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(3) == 180)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(4) == 1800)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(5) == 18000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(6) == 180000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(10) == 1800000000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(8) == 18000000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(9) == 180000000)){ tests_passed++; } total_tests++;
+
+    if((starts_one_ends(7) == 1800000)){ tests_passed++; } total_tests++;
+
+
+    auto __end = clock::now();
+    time_taken_ms = std::chrono::duration_cast<std::chrono::milliseconds>(__end - __start).count();
+    std::cout << "[TEST_SUMMARY] time_ms=" << time_taken_ms << " tests_passed=" << tests_passed << " total_tests=" << total_tests << std::endl;
+}
+
+
