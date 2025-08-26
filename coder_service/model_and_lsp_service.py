@@ -388,24 +388,13 @@ class ModelAndLSPService:
             if log["task_id"] == task_id:
                 return True
         return False
-            
-    '''-----------------------------------------------Service Methods--------------------------------------------------'''
-    # def get_code(self,query):
-    #     query = "Generate C++ code for the following query: \n" + query + " \nAlso provide the entire improved code in the format: ```cpp<code>```"
-    #     response = generate(query)
-    #     code = self.extract_cpp_code(response)
-    #     if not code:
-    #         return f"No code generated: {response}"
-    #     cpp_path = pathlib.Path(f"outputs/generated_code/car_race_collision_enhanced.cpp").resolve()
-    #     cpp_path.write_text(code, encoding="utf-8")
-    #     return code
-
+    
     def analyze_code(self,cpp_path: pathlib.Path) -> List[str]:
         clangd = ClangdClient()
         # cpp_path = pathlib.Path(f"outputs/generated_code/{filename}.cpp").resolve()
         code = cpp_path.read_text(encoding="utf-8")
         uri = cpp_path.as_uri()
-  
+
         '''1. Get diagnostics from clangd'''
         clangd.open_file(uri, code)
         diagnostics = clangd.get_diagnostics(uri)
@@ -423,48 +412,8 @@ class ModelAndLSPService:
         }
 
         return analysis
-
-
-    # def generate_enhanced_code(self, task):
-    #     query = task["prompt"]
-    #     filename = task["task_id"]
-    #     code = task["buggy_code"]
-
-    #     cpp_path = pathlib.Path(f"outputs/generated_code/{filename}.cpp").resolve()
-    #     cpp_path.write_text(code, encoding="utf-8")
-    #     print("--------------------------------------------------------------------Code generation completed--------------------------------------------------------------------")
-        
-    #     iteration = 0
-    #     code_analysis = self.analyze_code(filename)
-    #     self.generate_logs(filename, code, code_analysis, iteration)
-    #     original_analysis = copy.deepcopy(code_analysis)
-    #     original_code = code + "" # Store the original code for reference
-    #     enhanced_code = code + "" # Deep copy of the original code
-    #     filename_enhanced = f"{filename}_enhanced"
-    #     while True:
-    #         iteration += 1
-    #         print("******\n******\n******\n Iteration number: ", iteration, "\n******\n******\n******")
-    #         new_query = self.build_repair_prompt(
-    #             spec=query,                                 # the original natural-language task
-    #             current_code=enhanced_code,                 # current file contents
-    #             diags_now=code_analysis,                    # diagnostics from this iteration
-    #             diags_orig=original_analysis                # first-iteration reference
-    #         )
-    #         print(f"New query for iteration {iteration}: {new_query}")
-    #         enhanced_response = generate(new_query)
-    #         code = self.extract_cpp_code(enhanced_response)
-    #         if not code:
-    #             enhanced_code = enhanced_code
-    #         else:
-    #             enhanced_code = self.clean_cpp_code(code)
-    #         enhanced_path = pathlib.Path(f"outputs/generated_code/{filename_enhanced}.cpp").resolve()
-    #         enhanced_path.write_text(enhanced_code, encoding="utf-8")
-    #         code_analysis = self.analyze_code(filename_enhanced)
-    #         self.generate_logs(filename, enhanced_code, code_analysis, iteration)
-    #         if (code_analysis["diagnostics"] == []) or (iteration >= 5):
-    #             print("--------------------------------------------------------------------Code analysis completed--------------------------------------------------------------------")
-    #             break
-    #     return iteration
+            
+    '''-----------------------------------------------Service Methods--------------------------------------------------'''
 
     def generate_code(self, task,model):
         query = task["prompt"]
